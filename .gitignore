@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+
+output/
+
+data/contracts/
+data/invoices/
+data/medical/
+data/others/
+
