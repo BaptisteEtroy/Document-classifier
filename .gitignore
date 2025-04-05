@@ -3,8 +3,9 @@ __pycache__/
 
 output/
 
-data/contracts/
-data/invoices/
-data/medical/
-data/others/
+
+# data/contracts/
+# data/invoices/
+# data/medical/
+# data/others/
 
