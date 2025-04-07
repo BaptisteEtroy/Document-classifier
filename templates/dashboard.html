@@ -279,12 +279,18 @@
                 <div class="card">
                     <div class="card-header">
                         <i class="bi bi-terminal"></i> System Logs
-                        <button id="refresh-logs" class="btn btn-sm btn-outline-primary float-end">
-                            <i class="bi bi-arrow-clockwise"></i> Refresh Logs
-                        </button>
+                        <div class="float-end">
+                            <div class="form-check form-switch d-inline-block me-2">
+                                <input class="form-check-input" type="checkbox" id="logs-auto-refresh" checked>
+                                <label class="form-check-label" for="logs-auto-refresh">Auto-refresh (5s)</label>
+                            </div>
+                            <button id="refresh-logs" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh Logs
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
-                        <div class="log-viewer">
+                        <div class="log-viewer" style="max-height: 800px; white-space: pre-wrap; word-wrap: break-word;">
                             <div id="log-content"></div>
                         </div>
                     </div>
@@ -367,8 +373,32 @@
             document.getElementById('refresh-logs').addEventListener('click', fetchLogs);
             document.getElementById('refresh-dashboard').addEventListener('click', refreshDashboard);
             
-            // Set automatic refresh (every 30 seconds)
-            setInterval(fetchLogs, 30000);
+            // Set up auto-refresh toggle for logs
+            const logsAutoRefresh = document.getElementById('logs-auto-refresh');
+            let logsRefreshInterval;
+            
+            function startLogsAutoRefresh() {
+                logsRefreshInterval = setInterval(fetchLogs, 5000); // 5 seconds
+            }
+            
+            function stopLogsAutoRefresh() {
+                clearInterval(logsRefreshInterval);
+            }
+            
+            logsAutoRefresh.addEventListener('change', function() {
+                if (this.checked) {
+                    startLogsAutoRefresh();
+                } else {
+                    stopLogsAutoRefresh();
+                }
+            });
+            
+            // Start auto-refresh if enabled by default
+            if (logsAutoRefresh.checked) {
+                startLogsAutoRefresh();
+            }
+            
+            // Set automatic refresh for system info
             setInterval(refreshSystemInfo, 10000);
         });
         
@@ -377,28 +407,39 @@
             fetch('/logs')
                 .then(response => response.json())
                 .then(data => {
-                    // Process logs
-                    const logs = data.logs.split('\n');
-                    let logHtml = '';
+                    const logContent = document.getElementById('log-content');
+                    logContent.innerHTML = '';
                     
-                    logs.forEach(log => {
-                        if (!log.trim()) return;
+                    if (data.logs && data.logs.length > 0) {
+                        data.logs.forEach(log => {
+                            if (!log.trim()) return;
+                            
+                            let logClass = 'log-info';
+                            if (log.includes(' ERROR ')) {
+                                logClass = 'log-error';
+                            } else if (log.includes(' WARNING ')) {
+                                logClass = 'log-warning';
+                            }
+                            
+                            // Escape HTML to prevent any rendering issues
+                            const escapedLog = log.replace(/&/g, '&amp;')
+                                .replace(/</g, '&lt;')
+                                .replace(/>/g, '&gt;')
+                                .replace(/"/g, '&quot;')
+                                .replace(/'/g, '&#039;');
+                            
+                            const logDiv = document.createElement('div');
+                            logDiv.className = `log-entry ${logClass}`;
+                            logDiv.innerHTML = escapedLog;
+                            logContent.appendChild(logDiv);
+                        });
                         
-                        let logClass = 'log-info';
-                        if (log.includes('ERROR')) logClass = 'log-error';
-                        else if (log.includes('WARNING')) logClass = 'log-warning';
-                        
-                        // Escape HTML to prevent any rendering issues
-                        const escapedLog = log.replace(/&/g, '&amp;')
-                            .replace(/</g, '&lt;')
-                            .replace(/>/g, '&gt;')
-                            .replace(/"/g, '&quot;')
-                            .replace(/'/g, '&#039;');
-                        
-                        logHtml += `<div class="log-entry ${logClass}">${escapedLog}</div>`;
-                    });
-                    
-                    document.getElementById('log-content').innerHTML = logHtml || '<p class="text-muted">No logs available.</p>';
+                        // Scroll to bottom to show latest logs
+                        const logViewer = document.querySelector('.log-viewer');
+                        logViewer.scrollTop = logViewer.scrollHeight;
+                    } else {
+                        logContent.innerHTML = '<p class="text-muted">No logs available.</p>';
+                    }
                 })
                 .catch(error => {
                     document.getElementById('log-content').innerHTML = `<div class="log-entry log-error">Error fetching logs: ${error.message}</div>`;

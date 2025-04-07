@@ -206,6 +206,29 @@
         </div>
     </div>
     
+    <!-- Log Section -->
+    <div class="container mt-5 mb-5">
+        <div class="card">
+            <div class="card-header bg-dark text-white">
+                <h4 class="mb-0">
+                    <i class="bi bi-terminal"></i> System Logs
+                    <div class="float-end">
+                        <div class="form-check form-switch d-inline-block me-2">
+                            <input class="form-check-input" type="checkbox" id="auto-refresh" checked>
+                            <label class="form-check-label text-white" for="auto-refresh">Auto-refresh (5s)</label>
+                        </div>
+                        <button id="refresh-logs" class="btn btn-sm btn-outline-light">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh
+                        </button>
+                    </div>
+                </h4>
+            </div>
+            <div class="card-body p-0">
+                <div id="log-container" style="max-height: 400px; overflow-y: auto; background-color: #212529; color: #f8f9fa; padding: 15px; font-family: monospace; font-size: 14px; white-space: pre-wrap; word-wrap: break-word;"></div>
+            </div>
+        </div>
+    </div>
+    
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -230,11 +253,82 @@
             const extractBtn = document.getElementById('extractBtn');
             const extractionResult = document.getElementById('extraction-result');
             const jsonContent = document.getElementById('json-content');
+            const logContainer = document.getElementById('log-container');
+            const refreshLogsButton = document.getElementById('refresh-logs');
+            const autoRefreshCheckbox = document.getElementById('auto-refresh');
             
             let currentFilename = null;
             let currentFileUrl = null;
             let pdfDoc = null;
             let pdfPage = null;
+            let autoRefreshInterval;
+            
+            // Set up log fetching and auto-refresh
+            function fetchLogs() {
+                fetch('/logs')
+                    .then(response => response.json())
+                    .then(data => {
+                        logContainer.innerHTML = '';
+                        if (data.logs && data.logs.length > 0) {
+                            data.logs.forEach(log => {
+                                if (!log.trim()) return;
+                                
+                                let logClass = '';
+                                if (log.includes(' ERROR ')) {
+                                    logClass = 'text-danger';
+                                } else if (log.includes(' WARNING ')) {
+                                    logClass = 'text-warning';
+                                } else {
+                                    logClass = 'text-light';
+                                }
+                                
+                                const logDiv = document.createElement('div');
+                                logDiv.className = logClass;
+                                logDiv.style.marginBottom = '3px';
+                                logDiv.style.lineHeight = '1.4';
+                                logDiv.textContent = log;
+                                logContainer.appendChild(logDiv);
+                            });
+                            
+                            // Scroll to bottom to show latest logs
+                            logContainer.scrollTop = logContainer.scrollHeight;
+                        } else {
+                            logContainer.innerHTML = '<p class="text-muted">No logs available.</p>';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching logs:', error);
+                        logContainer.innerHTML = '<div class="text-danger">Error loading logs.</div>';
+                    });
+            }
+            
+            // Set up refresh button
+            refreshLogsButton.addEventListener('click', fetchLogs);
+            
+            // Auto-refresh functionality
+            function startAutoRefresh() {
+                autoRefreshInterval = setInterval(fetchLogs, 5000);
+            }
+            
+            function stopAutoRefresh() {
+                clearInterval(autoRefreshInterval);
+            }
+            
+            autoRefreshCheckbox.addEventListener('change', function() {
+                if (this.checked) {
+                    startAutoRefresh();
+                } else {
+                    stopAutoRefresh();
+                }
+            });
+            
+            // Initialize logs
+            fetchLogs();
+            
+            // Start auto-refresh if enabled
+            if (autoRefreshCheckbox.checked) {
+                startAutoRefresh();
+            }
             
             // PDF.js setup
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
@@ -314,20 +408,20 @@
                     }
                     
                     // Save current filename and URL for extraction
-                    currentFilename = data.filename;
-                    currentFileUrl = data.file_url;
+                    currentFilename = data.file;
+                    currentFileUrl = '/uploads/' + data.file;
                     
                     // Display classification result
                     resultHeader.className = 'card-header ' + data.category;
                     resultHeader.textContent = 'Classification Result: ' + data.category.toUpperCase();
-                    resultTitle.textContent = 'Document: ' + data.filename;
+                    resultTitle.textContent = 'Document: ' + data.file;
                     resultText.textContent = 'This document has been classified as: ' + data.category;
                     
                     // Show preview based on file type
-                    showDocumentPreview(data.filename, data.file_url);
+                    showDocumentPreview(data.file, '/uploads/' + data.file);
                     
                     // Show extraction button if document is an invoice
-                    if (data.can_extract) {
+                    if (data.extraction_available) {
                         extractionSection.classList.remove('hidden');
                         extractionUnavailable.classList.add('hidden');
                         extractionResult.classList.add('hidden');

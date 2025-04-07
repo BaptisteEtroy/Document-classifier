@@ -9,31 +9,29 @@ from werkzeug.utils import secure_filename
 from classification.document_classifier import DocumentClassifier
 from extraction.invoice_extractor import InvoiceExtractor
 
-# Set up logging
-log_stream = io.StringIO()
-log_handler = logging.StreamHandler(log_stream)
-log_handler.setLevel(logging.INFO)
-log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-log_handler.setFormatter(log_formatter)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Log to console
+        logging.FileHandler('app.log')  # Log to file
+    ]
+)
 
-# Add handler to root logger
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
-root_logger.addHandler(log_handler)
-
-# Also add console handler for terminal output
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(log_formatter)
-root_logger.addHandler(console_handler)
+# Get the logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['OUTPUT_FOLDER'] = 'output'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
 app.config['ALLOWED_EXTENSIONS'] = {'pdf', 'png', 'jpg', 'jpeg', 'tiff', 'bmp', 'txt', 'html', 'md'}
 
-# Create uploads folder if it doesn't exist
+# Create necessary directories
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
 
 # Initialize classifier and extractor
 classifier = DocumentClassifier(models_dir='models')
@@ -59,85 +57,82 @@ def uploaded_file(filename):
 
 @app.route('/classify', methods=['POST'])
 def classify_document():
+    # Check if a file was uploaded
     if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+        return jsonify({'error': 'No file part'})
     
     file = request.files['file']
+    
+    # Check if file was selected
     if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
+        return jsonify({'error': 'No file selected'})
     
     if file and allowed_file(file.filename):
-        # Clear previous logs
-        log_stream.truncate(0)
-        log_stream.seek(0)
-        
-        logging.info(f"Processing file: {file.filename}")
-        
-        # Save uploaded file
+        # Save the file
         filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
+        logger.info(f"Processing file: {filename}")
+        logger.info(f"File saved to: {file_path}")
         
-        logging.info(f"File saved to: {filepath}")
+        # Classify the document
+        logger.info("Starting document classification...")
+        category = classifier.classify(file_path)
+        logger.info(f"Document classified as: {category}")
         
-        # Classify document
-        try:
-            logging.info("Starting document classification...")
-            category = classifier.classify(filepath)
-            logging.info(f"Document classified as: {category}")
-            
-            result = {
-                'filename': filename, 
-                'category': category,
-                'file_url': f'/uploads/{filename}'
-            }
-            
-            # If document is an invoice, offer extraction
-            if category == 'invoices':
-                result['can_extract'] = True
-                logging.info("Document is an invoice. Extraction available.")
-            else:
-                result['can_extract'] = False
-                logging.info("Document is not an invoice. Extraction unavailable.")
-            
-            return jsonify(result)
-        except Exception as e:
-            logging.error(f"Error classifying document: {str(e)}")
-            return jsonify({'error': str(e)}), 500
+        # Determine if extraction is available
+        extraction_available = (category == 'invoices')
+        if extraction_available:
+            logger.info("Document is an invoice. Extraction available.")
+        
+        # Return the result
+        return jsonify({
+            'success': True,
+            'file': filename,
+            'category': category,
+            'extraction_available': extraction_available
+        })
     
-    logging.warning(f"File type not allowed: {file.filename}")
-    return jsonify({'error': 'File type not allowed'}), 400
+    return jsonify({'error': 'Invalid file type'})
 
 @app.route('/extract', methods=['POST'])
 def extract_info():
-    # Get the filename from the request
+    # Get filename from request
     data = request.get_json()
     if not data or 'filename' not in data:
-        return jsonify({'error': 'No filename provided'}), 400
+        return jsonify({'error': 'No filename provided'})
     
     filename = data['filename']
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(filename))
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     
-    logging.info(f"Starting extraction for: {filename}")
-    
-    if not os.path.exists(filepath):
-        logging.error(f"File not found: {filepath}")
-        return jsonify({'error': 'File not found'}), 404
+    # Check if file exists
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'})
     
     # Extract information
-    try:
-        logging.info("Extracting information from invoice...")
-        extracted_info = extractor.extract(filepath)
-        logging.info("Extraction complete.")
-        return jsonify(extracted_info)
-    except Exception as e:
-        logging.error(f"Error extracting information: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+    logger.info(f"Starting extraction for: {filename}")
+    logger.info("Extracting information from invoice...")
+    extracted_info = extractor.extract(file_path)
+    
+    # Save the extraction result
+    output_path = os.path.join(app.config['OUTPUT_FOLDER'], f"{filename}_extracted.json")
+    extractor.save_results(extracted_info, output_path)
+    
+    logger.info("Extraction complete.")
+    return jsonify(extracted_info)
 
 @app.route('/logs', methods=['GET'])
 def get_logs():
-    logs = log_stream.getvalue()
-    return jsonify({'logs': logs})
+    """Endpoint to retrieve recent logs for the dashboard"""
+    try:
+        with open('app.log', 'r') as log_file:
+            logs = log_file.readlines()
+            # Clean up the logs (remove newlines, empty lines)
+            logs = [log.strip() for log in logs if log.strip()]
+            # Return the last 50 log entries or fewer if there aren't that many
+            return jsonify({'logs': logs[-50:] if len(logs) > 50 else logs})
+    except FileNotFoundError:
+        return jsonify({'logs': ['No logs available yet.']})
 
 @app.route('/api/system-info', methods=['GET'])
 def api_system_info():
