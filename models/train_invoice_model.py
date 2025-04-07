@@ -73,7 +73,7 @@ def extract_features(file_path, stop_words):
         print(f"Error processing {file_path}: {e}")
         return ""
 
-def train_invoice_model(data_dir='app/data', output_model_path='app/models/invoice_model.pkl'):
+def train_invoice_model(data_dir='data', output_model_path='models/invoice_model.pkl'):
     """Train a model to identify invoice documents"""
     
     # Download NLTK resources if not already present
@@ -92,7 +92,7 @@ def train_invoice_model(data_dir='app/data', output_model_path='app/models/invoi
     # Collect training data
     invoice_dir = os.path.join(data_dir, 'invoices')
     other_files = []
-    for category in ['contracts', 'medical', 'others']:
+    for category in ['Shipping orders', 'resumes', 'others']:
         category_dir = os.path.join(data_dir, category)
         if os.path.exists(category_dir):
             other_files.extend(list_files_in_directory(category_dir))

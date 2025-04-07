@@ -13,22 +13,28 @@ from PIL import Image
 import cv2
 
 class DocumentClassifier:
-    def __init__(self, models_dir='app/models'):
-        self.categories = ['invoices', 'contracts', 'medical', 'others']
+    def __init__(self, models_dir='models'):
+        # Use same directory name format as in the training data
+        self.categories = ['invoices', 'Shipping orders', 'resumes', 'others']
         self.models_dir = models_dir
         
         # Model paths
         self.invoice_model_path = os.path.join(models_dir, 'invoice_model.pkl')
-        self.contract_model_path = os.path.join(models_dir, 'contract_model.pkl')
-        self.medical_model_path = os.path.join(models_dir, 'medical_model.pkl')
+        self.shipping_orders_model_path = os.path.join(models_dir, 'shipping_orders_model.pkl')
+        self.resume_model_path = os.path.join(models_dir, 'resume_model.pkl')
         
         # Initialize models
         self.invoice_model = None
         self.invoice_vectorizer = None
-        self.contract_model = None
-        self.contract_vectorizer = None
-        self.medical_model = None
-        self.medical_vectorizer = None
+        self.shipping_orders_model = None
+        self.shipping_orders_vectorizer = None
+        self.resume_model = None
+        self.resume_vectorizer = None
+        
+        # Define key indicators for each category
+        self.invoice_indicators = ['invoice', 'bill', 'receipt', 'payment', 'due date', 'invoice no', 'total amount', 'subtotal', 'tax']
+        self.shipping_orders_indicators = ['shipping', 'order', 'shipment', 'delivery', 'tracking', 'package', 'carrier', 'freight', 'logistics', 'consignment']
+        self.resume_indicators = ['resume', 'cv', 'curriculum vitae', 'experience', 'skills', 'education', 'employment', 'profile', 'objective', 'references']
         
         # Download NLTK resources if not already present
         try:
@@ -57,26 +63,30 @@ class DocumentClassifier:
             except Exception as e:
                 print(f"Error loading invoice model: {e}")
         
-        # Load contract model
-        if os.path.exists(self.contract_model_path):
+        # Load shipping orders model
+        if os.path.exists(self.shipping_orders_model_path):
             try:
-                with open(self.contract_model_path, 'rb') as f:
-                    self.contract_vectorizer, self.contract_model = pickle.load(f)
-                print("Contract model loaded successfully")
+                with open(self.shipping_orders_model_path, 'rb') as f:
+                    self.shipping_orders_vectorizer, self.shipping_orders_model = pickle.load(f)
+                print("Shipping orders model loaded successfully")
             except Exception as e:
-                print(f"Error loading contract model: {e}")
+                print(f"Error loading shipping orders model: {e}")
         
-        # Load medical model
-        if os.path.exists(self.medical_model_path):
+        # Load resume model
+        if os.path.exists(self.resume_model_path):
             try:
-                with open(self.medical_model_path, 'rb') as f:
-                    self.medical_vectorizer, self.medical_model = pickle.load(f)
-                print("Medical model loaded successfully")
+                with open(self.resume_model_path, 'rb') as f:
+                    self.resume_vectorizer, self.resume_model = pickle.load(f)
+                print("Resume model loaded successfully")
             except Exception as e:
-                print(f"Error loading medical model: {e}")
+                print(f"Error loading resume model: {e}")
     
     def preprocess_text(self, text):
         """Preprocess text by tokenizing, removing stopwords, and lowercasing"""
+        # Handle None or empty text
+        if not text:
+            return ""
+            
         tokens = word_tokenize(text.lower())
         tokens = [token for token in tokens if token.isalpha() and token not in self.stop_words]
         return ' '.join(tokens)
@@ -88,7 +98,13 @@ class DocumentClassifier:
             with open(pdf_path, 'rb') as file:
                 pdf_reader = PyPDF2.PdfReader(file)
                 for page_num in range(len(pdf_reader.pages)):
-                    text += pdf_reader.pages[page_num].extract_text()
+                    page_text = pdf_reader.pages[page_num].extract_text()
+                    if page_text:
+                        text += page_text + " "
+            
+            # If PyPDF2 fails to extract text properly, try to log this
+            if not text.strip():
+                print(f"Warning: No text extracted from PDF {pdf_path}")
         except Exception as e:
             print(f"Error extracting text from PDF {pdf_path}: {e}")
         return text
@@ -125,6 +141,13 @@ class DocumentClassifier:
                 # For unsupported file types, return empty string
                 return ""
             
+            # Print first few characters of extracted text for debugging
+            if text:
+                preview = text[:100] + "..." if len(text) > 100 else text
+                print(f"Extracted from {file_path}: {preview}")
+            else:
+                print(f"No text extracted from {file_path}")
+                
             return self.preprocess_text(text)
         except Exception as e:
             print(f"Error extracting features from {file_path}: {e}")
@@ -136,14 +159,15 @@ class DocumentClassifier:
         features = self.extract_features(file_path)
         
         if not features:
+            print(f"Warning: No features extracted from {file_path}")
             return "others"  # Default for unsupported files or empty content
         
         # Initialize scores for each category
         scores = {
             'invoices': 0.0,
-            'contracts': 0.0,
-            'medical': 0.0,
-            'others': 0.1  # Default score for others
+            'Shipping orders': 0.0,  # Match the directory name
+            'resumes': 0.0,
+            'others': 0.25  # Higher default score for others to prevent misclassification
         }
         
         # Use invoice model if available
@@ -151,50 +175,168 @@ class DocumentClassifier:
             X = self.invoice_vectorizer.transform([features])
             invoice_prob = self.invoice_model.predict_proba(X)[0][1]  # Probability of being an invoice
             scores['invoices'] = invoice_prob
+            print(f"Invoice score: {invoice_prob:.4f}")
         
-        # Use contract model if available
-        if self.contract_model is not None and self.contract_vectorizer is not None:
-            X = self.contract_vectorizer.transform([features])
-            contract_prob = self.contract_model.predict_proba(X)[0][1]  # Probability of being a contract
-            scores['contracts'] = contract_prob
+        # Use shipping orders model if available
+        if self.shipping_orders_model is not None and self.shipping_orders_vectorizer is not None:
+            X = self.shipping_orders_vectorizer.transform([features])
+            shipping_orders_prob = self.shipping_orders_model.predict_proba(X)[0][1]  # Probability of being a shipping order
+            scores['Shipping orders'] = shipping_orders_prob
+            print(f"Shipping orders score: {shipping_orders_prob:.4f}")
         
-        # Use medical model if available
-        if self.medical_model is not None and self.medical_vectorizer is not None:
-            X = self.medical_vectorizer.transform([features])
-            medical_prob = self.medical_model.predict_proba(X)[0][1]  # Probability of being a medical document
-            scores['medical'] = medical_prob
+        # Use resume model if available
+        if self.resume_model is not None and self.resume_vectorizer is not None:
+            X = self.resume_vectorizer.transform([features])
+            resume_prob = self.resume_model.predict_proba(X)[0][1]  # Probability of being a resume
+            scores['resumes'] = resume_prob
+            print(f"Resume score: {resume_prob:.4f}")
         
-        # If no model provided high confidence, use rule-based classification
-        max_prob = max(scores.values())
-        if max_prob < 0.5:
-            return self._rule_based_classification(features, file_path)
+        # Print initial scores for debugging
+        print(f"Initial model scores: {scores}")
+        
+        # Keyword-based score adjustment
+        original_text = ''
+        _, ext = os.path.splitext(file_path)
+        try:
+            if ext.lower() == '.pdf':
+                with open(file_path, 'rb') as file:
+                    pdf_reader = PyPDF2.PdfReader(file)
+                    for page_num in range(len(pdf_reader.pages)):
+                        page_text = pdf_reader.pages[page_num].extract_text()
+                        if page_text:
+                            original_text += page_text + " "
+            elif ext.lower() in ['.jpg', '.jpeg', '.png', '.tiff', '.bmp']:
+                original_text = self.extract_text_from_image(file_path)
+            elif ext.lower() in ['.txt', '.md', '.html']:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                    original_text = file.read()
+        except Exception as e:
+            print(f"Error reading file for keyword analysis: {e}")
+            
+        # Apply keyword-based adjustments - boosting and penalizing
+        if original_text:
+            lower_text = original_text.lower()
+            
+            # Check for indicators presence
+            has_invoice_indicators = any(keyword in lower_text for keyword in self.invoice_indicators)
+            has_shipping_indicators = any(keyword in lower_text for keyword in self.shipping_orders_indicators)
+            has_resume_indicators = any(keyword in lower_text for keyword in self.resume_indicators)
+            
+            # Penalize categories with no indicators but high scores
+            if scores['invoices'] > 0.5 and not has_invoice_indicators:
+                print(f"High invoice score but no invoice indicators found - reducing score")
+                scores['invoices'] *= 0.3  # Reduce the score by 70%
+                scores['others'] += 0.3    # Boost others score
+            
+            if scores['Shipping orders'] > 0.5 and not has_shipping_indicators:
+                print(f"High shipping orders score but no shipping indicators found - reducing score")
+                scores['Shipping orders'] *= 0.3
+                scores['others'] += 0.3
+                
+            if scores['resumes'] > 0.5 and not has_resume_indicators:
+                print(f"High resume score but no resume indicators found - reducing score")
+                scores['resumes'] *= 0.3
+                scores['others'] += 0.3
+            
+            # Boost scores for categories with indicators
+            invoice_boost = 0
+            for keyword in self.invoice_indicators:
+                if keyword in lower_text:
+                    invoice_boost += 0.15  # Increase score for each keyword found
+                    print(f"Found invoice keyword: '{keyword}' - boosting invoice score")
+            
+            if invoice_boost > 0:
+                scores['invoices'] = min(0.95, scores['invoices'] + invoice_boost)  # Cap at 0.95
+            
+            shipping_boost = 0
+            for keyword in self.shipping_orders_indicators:
+                if keyword in lower_text:
+                    shipping_boost += 0.15  # Increase score for each keyword found
+                    print(f"Found shipping keyword: '{keyword}' - boosting shipping orders score")
+            
+            if shipping_boost > 0:
+                scores['Shipping orders'] = min(0.95, scores['Shipping orders'] + shipping_boost)  # Cap at 0.95
+                
+            resume_boost = 0
+            for keyword in self.resume_indicators:
+                if keyword in lower_text:
+                    resume_boost += 0.1  # Smaller boost for resume keywords
+                    print(f"Found resume keyword: '{keyword}' - boosting resume score")
+            
+            if resume_boost > 0:
+                scores['resumes'] = min(0.9, scores['resumes'] + resume_boost)  # Cap at 0.9
+        
+        # Print adjusted scores
+        print(f"Adjusted scores after keyword analysis: {scores}")
+        
+        # If filename contains clear indicators, boost further
+        filename = os.path.basename(file_path).lower()
+        if 'invoice' in filename:
+            scores['invoices'] = max(scores['invoices'], 0.8)  # Ensure high score but not override
+            print(f"Filename contains 'invoice' - ensuring high invoice score: {scores['invoices']}")
+        elif 'shipping' in filename or 'order' in filename:
+            scores['Shipping orders'] = max(scores['Shipping orders'], 0.8)
+            print(f"Filename contains shipping keywords - ensuring high shipping score: {scores['Shipping orders']}")
+        elif 'resume' in filename or 'cv' in filename:
+            scores['resumes'] = max(scores['resumes'], 0.8)
+            print(f"Filename contains resume keywords - ensuring high resume score: {scores['resumes']}")
+        
+        # If no category has high confidence, use rule-based classification
+        highest_score = max(scores.values())
+        if highest_score < 0.5:
+            print("No category has high confidence - using rule-based classification")
+            rule_based_result = self._rule_based_classification(features, file_path)
+            print(f"Rule-based classification result: {rule_based_result}")
+            return rule_based_result
         
         # Return the category with the highest probability
-        return max(scores, key=scores.get)
+        result = max(scores, key=scores.get)
+        print(f"Final classification: {result} with score {scores[result]:.4f}")
+        return result
     
     def _rule_based_classification(self, text, file_path):
         """Rule-based classification using keyword matching and patterns"""
         text = text.lower()
+        filename = os.path.basename(file_path).lower()
         
         # Check for invoice indicators
-        invoice_indicators = ['invoice', 'bill', 'receipt', 'payment', 'due date', 'invoice no', 'total amount', 'subtotal', 'tax']
-        invoice_score = sum(1 for indicator in invoice_indicators if indicator in text)
+        invoice_score = sum(1 for indicator in self.invoice_indicators if indicator in text)
         
-        # Check for contract indicators
-        contract_indicators = ['contract', 'agreement', 'terms', 'conditions', 'parties', 'hereby', 'provisions', 'clause', 'shall', 'legal']
-        contract_score = sum(1 for indicator in contract_indicators if indicator in text)
+        # Check for shipping order indicators
+        shipping_orders_score = sum(1 for indicator in self.shipping_orders_indicators if indicator in text)
         
-        # Check for medical document indicators
-        medical_indicators = ['patient', 'diagnosis', 'treatment', 'medical', 'doctor', 'hospital', 'clinic', 'prescription', 'symptoms', 'health']
-        medical_score = sum(1 for indicator in medical_indicators if indicator in text)
+        # Check for resume document indicators
+        resume_score = sum(1 for indicator in self.resume_indicators if indicator in text)
         
-        # Calculate the scores
+        # Calculate normalized scores
+        total_invoice = len(self.invoice_indicators)
+        total_shipping = len(self.shipping_orders_indicators)
+        total_resume = len(self.resume_indicators)
+        
+        # Calculate the scores with higher threshold for classification
         scores = {
-            'invoices': invoice_score / len(invoice_indicators) if invoice_indicators else 0,
-            'contracts': contract_score / len(contract_indicators) if contract_indicators else 0,
-            'medical': medical_score / len(medical_indicators) if medical_indicators else 0,
-            'others': 0.1  # Default score for others
+            'invoices': invoice_score / total_invoice if total_invoice > 0 else 0,
+            'Shipping orders': shipping_orders_score / total_shipping if total_shipping > 0 else 0,
+            'resumes': resume_score / total_resume if total_resume > 0 else 0,
+            'others': 0.3  # Higher baseline for others
         }
+        
+        # Add filename-based boosts
+        if 'invoice' in filename:
+            scores['invoices'] += 0.2
+        elif 'shipping' in filename or 'order' in filename:
+            scores['Shipping orders'] += 0.2
+        elif 'resume' in filename or 'cv' in filename:
+            scores['resumes'] += 0.2
+            
+        # If no category has a good score, default to others
+        max_score = max(scores['invoices'], scores['Shipping orders'], scores['resumes'])
+        if max_score < 0.3:  # Low confidence in any specific category
+            print("No strong category indicators found in rule-based classification")
+            return 'others'
+            
+        # Print the rule-based scores for debugging
+        print(f"Rule-based scores: {scores}")
         
         # Classify based on the highest score
         return max(scores, key=scores.get)

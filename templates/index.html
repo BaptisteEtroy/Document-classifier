@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Classifier</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <style>
+        .drop-area {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .drop-area:hover, .drop-area.highlight {
+            border-color: #007bff;
+            background-color: #f8f9fa;
+        }
+        .hidden {
+            display: none;
+        }
+        .result-card {
+            margin-top: 20px;
+            transition: all 0.3s;
+        }
+        .card-header.invoices {
+            background-color: #28a745;
+            color: white;
+        }
+        .card-header.contracts {
+            background-color: #ffc107;
+            color: white;
+        }
+        .card-header.resumes {
+            background-color: #17a2b8;
+            color: white;
+        }
+        .card-header.others {
+            background-color: #6c757d;
+            color: white;
+        }
+        #loading {
+            display: none;
+            margin-top: 20px;
+        }
+        .json-viewer, .log-viewer {
+            max-height: 300px;
+            overflow-y: auto;
+            overflow-x: auto;
+            font-family: monospace;
+            font-size: 0.9rem;
+            white-space: pre;
+            word-break: normal;
+            width: 100%;
+        }
+        .document-preview {
+            margin-top: 0;
+            height: 500px;
+            overflow: auto;
+            text-align: center;
+            border-right: 1px solid #dee2e6;
+            padding-right: 15px;
+        }
+        .document-preview img {
+            max-width: 100%;
+            max-height: 480px;
+            object-fit: contain;
+        }
+        #pdfViewer {
+            width: 100%;
+            height: 480px;
+            border: 1px solid #ddd;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        .log-error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .log-warning {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .log-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+        .tab-content {
+            padding: 15px;
+            border: 1px solid #dee2e6;
+            border-top: none;
+            border-radius: 0 0 5px 5px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">Document Classifier</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/"><i class="bi bi-house-door"></i> Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-5">
+        <h1 class="text-center mb-4">Document Classifier</h1>
+        
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div id="drop-area" class="drop-area">
+                    <p>Drag & drop file here or</p>
+                    <input type="file" id="fileInput" class="hidden">
+                    <button class="btn btn-primary" id="browseBtn">Browse Files</button>
+                    <p class="mt-2 text-muted">Supported files: PDF, JPG, PNG, TIFF, BMP, TXT, HTML, MD</p>
+                </div>
+                
+                <div id="loading" class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p>Processing document...</p>
+                </div>
+                
+                <div id="result" class="result-card hidden">
+                    <div class="card">
+                        <div class="card-header" id="result-header">
+                            Classification Result
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <!-- Document Preview on the Left -->
+                                <div class="col-md-7">
+                                    <div id="document-preview" class="document-preview hidden">
+                                        <h5>Document Preview</h5>
+                                        <div id="image-preview" class="hidden">
+                                            <img id="preview-image" src="" alt="Document Preview">
+                                        </div>
+                                        <div id="pdf-preview" class="hidden">
+                                            <canvas id="pdfViewer"></canvas>
+                                        </div>
+                                        <div id="text-preview" class="hidden">
+                                            <div class="bg-light p-3 rounded">
+                                                <pre id="text-content"></pre>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Classification Info and Extraction on the Right -->
+                                <div class="col-md-5">
+                                    <h5 class="card-title" id="result-title">Document Category</h5>
+                                    <p class="card-text" id="result-text">Waiting for document...</p>
+                                    
+                                    <!-- Tabs for Extraction -->
+                                    <div class="mt-4">
+                                        <ul class="nav nav-tabs" id="docTabs" role="tablist">
+                                            <li class="nav-item" role="presentation">
+                                                <button class="nav-link active" id="extraction-tab" data-bs-toggle="tab" data-bs-target="#extraction" type="button" role="tab">Extraction</button>
+                                            </li>
+                                        </ul>
+                                        
+                                        <div class="tab-content" id="docTabsContent">
+                                            <div class="tab-pane fade show active" id="extraction" role="tabpanel">
+                                                <div id="extraction-section" class="hidden">
+                                                    <h5>Extract Invoice Information</h5>
+                                                    <button id="extractBtn" class="btn btn-success">Extract Information</button>
+                                                    
+                                                    <div id="extraction-result" class="mt-3 hidden">
+                                                        <h6>Extracted Information:</h6>
+                                                        <div class="json-viewer bg-light p-3 rounded">
+                                                            <pre id="json-content"></pre>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div id="extraction-unavailable" class="text-muted">
+                                                    Extraction is only available for documents classified as invoices.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Elements
+            const dropArea = document.getElementById('drop-area');
+            const fileInput = document.getElementById('fileInput');
+            const browseBtn = document.getElementById('browseBtn');
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            const resultHeader = document.getElementById('result-header');
+            const resultTitle = document.getElementById('result-title');
+            const resultText = document.getElementById('result-text');
+            const documentPreview = document.getElementById('document-preview');
+            const imagePreview = document.getElementById('image-preview');
+            const previewImage = document.getElementById('preview-image');
+            const pdfPreview = document.getElementById('pdf-preview');
+            const pdfCanvas = document.getElementById('pdfViewer');
+            const textPreview = document.getElementById('text-preview');
+            const textContent = document.getElementById('text-content');
+            const extractionSection = document.getElementById('extraction-section');
+            const extractionUnavailable = document.getElementById('extraction-unavailable');
+            const extractBtn = document.getElementById('extractBtn');
+            const extractionResult = document.getElementById('extraction-result');
+            const jsonContent = document.getElementById('json-content');
+            
+            let currentFilename = null;
+            let currentFileUrl = null;
+            let pdfDoc = null;
+            let pdfPage = null;
+            
+            // PDF.js setup
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+            
+            // Open file dialog when browse button is clicked
+            browseBtn.addEventListener('click', function() {
+                fileInput.click();
+            });
+            
+            // Handle file selection
+            fileInput.addEventListener('change', function() {
+                if (fileInput.files.length > 0) {
+                    handleFile(fileInput.files[0]);
+                }
+            });
+            
+            // Prevent defaults for drag events
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, preventDefaults, false);
+            });
+            
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            
+            // Highlight drop area when file is dragged over
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropArea.addEventListener(eventName, highlight, false);
+            });
+            
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, unhighlight, false);
+            });
+            
+            function highlight() {
+                dropArea.classList.add('highlight');
+            }
+            
+            function unhighlight() {
+                dropArea.classList.remove('highlight');
+            }
+            
+            // Handle dropped files
+            dropArea.addEventListener('drop', function(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files.length > 0) {
+                    handleFile(files[0]);
+                }
+            });
+            
+            // Process the file
+            function handleFile(file) {
+                // Show loading indicator
+                loading.style.display = 'block';
+                result.classList.add('hidden');
+                
+                // Create form data
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                // Send the file to the server
+                fetch('/classify', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Hide loading indicator
+                    loading.style.display = 'none';
+                    result.classList.remove('hidden');
+                    
+                    if (data.error) {
+                        showError(data.error);
+                        return;
+                    }
+                    
+                    // Save current filename and URL for extraction
+                    currentFilename = data.filename;
+                    currentFileUrl = data.file_url;
+                    
+                    // Display classification result
+                    resultHeader.className = 'card-header ' + data.category;
+                    resultHeader.textContent = 'Classification Result: ' + data.category.toUpperCase();
+                    resultTitle.textContent = 'Document: ' + data.filename;
+                    resultText.textContent = 'This document has been classified as: ' + data.category;
+                    
+                    // Show preview based on file type
+                    showDocumentPreview(data.filename, data.file_url);
+                    
+                    // Show extraction button if document is an invoice
+                    if (data.can_extract) {
+                        extractionSection.classList.remove('hidden');
+                        extractionUnavailable.classList.add('hidden');
+                        extractionResult.classList.add('hidden');
+                    } else {
+                        extractionSection.classList.add('hidden');
+                        extractionUnavailable.classList.remove('hidden');
+                    }
+                })
+                .catch(error => {
+                    loading.style.display = 'none';
+                    showError('An error occurred: ' + error.message);
+                });
+            }
+            
+            // Show document preview based on file type
+            function showDocumentPreview(filename, fileUrl) {
+                // Hide all preview types initially
+                imagePreview.classList.add('hidden');
+                pdfPreview.classList.add('hidden');
+                textPreview.classList.add('hidden');
+                
+                // Get file extension
+                const ext = filename.split('.').pop().toLowerCase();
+                
+                if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff'].includes(ext)) {
+                    // Show image preview
+                    previewImage.src = fileUrl;
+                    imagePreview.classList.remove('hidden');
+                    documentPreview.classList.remove('hidden');
+                } else if (ext === 'pdf') {
+                    // Show PDF preview
+                    loadPDF(fileUrl);
+                    pdfPreview.classList.remove('hidden');
+                    documentPreview.classList.remove('hidden');
+                } else if (['txt', 'md', 'html'].includes(ext)) {
+                    // Show text preview
+                    fetch(fileUrl)
+                        .then(response => response.text())
+                        .then(text => {
+                            textContent.textContent = text;
+                            textPreview.classList.remove('hidden');
+                            documentPreview.classList.remove('hidden');
+                        });
+                } else {
+                    // No preview available
+                    documentPreview.classList.add('hidden');
+                }
+            }
+            
+            // Load PDF using PDF.js
+            function loadPDF(url) {
+                pdfjsLib.getDocument(url).promise.then(function(pdf) {
+                    pdfDoc = pdf;
+                    renderPage(1);
+                });
+            }
+            
+            function renderPage(num) {
+                pdfDoc.getPage(num).then(function(page) {
+                    pdfPage = page;
+                    
+                    const viewport = page.getViewport({scale: 1.5});
+                    pdfCanvas.height = viewport.height;
+                    pdfCanvas.width = viewport.width;
+                    
+                    const renderContext = {
+                        canvasContext: pdfCanvas.getContext('2d'),
+                        viewport: viewport
+                    };
+                    
+                    page.render(renderContext);
+                });
+            }
+            
+            // Handle extract button click
+            extractBtn.addEventListener('click', function() {
+                if (!currentFilename) return;
+                
+                // Show loading
+                loading.style.display = 'block';
+                extractionResult.classList.add('hidden');
+                
+                // Send extraction request
+                fetch('/extract', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ filename: currentFilename })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Hide loading
+                    loading.style.display = 'none';
+                    
+                    if (data.error) {
+                        showError(data.error);
+                        return;
+                    }
+                    
+                    // Display extraction result
+                    extractionResult.classList.remove('hidden');
+                    jsonContent.textContent = JSON.stringify(data, null, 2);
+                })
+                .catch(error => {
+                    loading.style.display = 'none';
+                    showError('An error occurred during extraction: ' + error.message);
+                });
+            });
+            
+            // Show error message
+            function showError(message) {
+                result.classList.remove('hidden');
+                resultHeader.className = 'card-header bg-danger text-white';
+                resultHeader.textContent = 'Error';
+                resultTitle.textContent = 'Error Processing Document';
+                resultText.textContent = message;
+                extractionSection.classList.add('hidden');
+                extractionUnavailable.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html> 
