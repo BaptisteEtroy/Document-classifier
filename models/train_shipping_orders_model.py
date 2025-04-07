@@ -73,8 +73,8 @@ def extract_features(file_path, stop_words):
         print(f"Error processing {file_path}: {e}")
         return ""
 
-def train_invoice_model(data_dir='data', output_model_path='models/invoice_model.pkl'):
-    """Train a model to identify invoice documents"""
+def train_shipping_orders_model(data_dir='data', output_model_path='models/shipping_orders_model.pkl'):
+    """Train a model to identify shipping orders documents"""
     
     # Download NLTK resources if not already present
     try:
@@ -90,45 +90,45 @@ def train_invoice_model(data_dir='data', output_model_path='models/invoice_model
     stop_words = set(stopwords.words('english'))
     
     # Collect training data
-    invoice_dir = os.path.join(data_dir, 'invoices')
+    shipping_orders_dir = os.path.join(data_dir, 'Shipping orders')
     other_files = []
-    for category in ['Shipping orders', 'resumes', 'others']:
+    for category in ['invoices', 'resumes', 'others']:
         category_dir = os.path.join(data_dir, category)
         if os.path.exists(category_dir):
             other_files.extend(list_files_in_directory(category_dir))
     
-    if not os.path.exists(invoice_dir):
-        print(f"Invoice directory {invoice_dir} not found. Creating it...")
-        os.makedirs(invoice_dir, exist_ok=True)
-        print(f"Please add invoice documents to {invoice_dir} and run again.")
+    if not os.path.exists(shipping_orders_dir):
+        print(f"Shipping orders directory {shipping_orders_dir} not found. Creating it...")
+        os.makedirs(shipping_orders_dir, exist_ok=True)
+        print(f"Please add shipping order documents to {shipping_orders_dir} and run again.")
         return
     
-    invoice_files = list_files_in_directory(invoice_dir)
+    shipping_orders_files = list_files_in_directory(shipping_orders_dir)
     
-    if not invoice_files:
-        print(f"No invoice files found in {invoice_dir}. Please add some and run again.")
+    if not shipping_orders_files:
+        print(f"No shipping order files found in {shipping_orders_dir}. Please add some and run again.")
         return
     
     if not other_files:
-        print("No non-invoice files found for negative examples. Using only invoice features.")
+        print("No non-shipping-order files found for negative examples. Using only shipping order features.")
     
     # Create dataset
     X = []
     y = []
     
-    # Process invoice files (positive examples)
-    for file_path in invoice_files:
+    # Process shipping order files (positive examples)
+    for file_path in shipping_orders_files:
         features = extract_features(file_path, stop_words)
         if features:
             X.append(features)
-            y.append(1)  # 1 for invoice
+            y.append(1)  # 1 for shipping order
     
-    # Process non-invoice files (negative examples)
+    # Process non-shipping-order files (negative examples)
     for file_path in other_files:
         features = extract_features(file_path, stop_words)
         if features:
             X.append(features)
-            y.append(0)  # 0 for non-invoice
+            y.append(0)  # 0 for non-shipping-order
     
     if len(X) == 0:
         print("No valid documents found for training. Please check file formats.")
@@ -156,14 +156,14 @@ def train_invoice_model(data_dir='data', output_model_path='models/invoice_model
     
     # Evaluate
     accuracy = model.score(X_test, y_test)
-    print(f"Invoice model accuracy: {accuracy:.4f}")
+    print(f"Shipping orders model accuracy: {accuracy:.4f}")
     
     # Save the model
     os.makedirs(os.path.dirname(output_model_path), exist_ok=True)
     with open(output_model_path, 'wb') as f:
         pickle.dump((vectorizer, model), f)
     
-    print(f"Invoice model saved to {output_model_path}")
+    print(f"Shipping orders model saved to {output_model_path}")
 
 if __name__ == "__main__":
-    train_invoice_model()
+    train_shipping_orders_model() 
