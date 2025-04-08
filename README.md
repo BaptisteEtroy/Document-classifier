@@ -59,3 +59,52 @@ Our repository focuses on classifying 3 different types of documents: Invoices, 
 - The /templates directory consists of the files for building the UI for uploading the documents to accurately classify them and then extract information from invoice documents.
 ![Dashboard](assets/ui_1.png)
 ![Classification](assets/ui_2.png)
+
+## How to Run
+
+### Setup
+
+1. Create a virtual environment:
+   ```
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+2. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+### Running the Application
+
+#### Web Interface
+To run the web application:
+```
+python webapp.py
+```
+Then open your browser and navigate to `http://localhost:5000`
+
+#### Local Testing
+For command-line testing:
+```
+python main.py
+```
+Follow the prompts to select input files and output directory.
+
+## Project Structure
+
+- `webapp.py` - Web application server
+- `main.py` - Command-line interface for local testing
+- `classification/` - Document classification logic
+- `extraction/` - Invoice info extraction logic
+- `models/` - Machine learning models and trainers
+- `templates/` - HTML templates for webapp
+- `uploads/` - DIR for uploaded documents(webapp)
+- `output/` - DIR for output jsons(local)
+
+## Model Training
+
+To train the classification models, first add (new) data to the data folder, then run:
+```
+python models/train_all_models.py
+```
